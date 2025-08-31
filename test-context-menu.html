@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test Context Menu - Magnet Links</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            line-height: 1.6;
+        }
+        .magnet-link {
+            display: inline-block;
+            margin: 10px 0;
+            padding: 10px;
+            background-color: #f0f0f0;
+            border-radius: 5px;
+            text-decoration: none;
+            color: #333;
+            border: 1px solid #ddd;
+        }
+        .magnet-link:hover {
+            background-color: #e0e0e0;
+        }
+        .instructions {
+            background-color: #e7f3ff;
+            padding: 15px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+            border-left: 4px solid #2196F3;
+        }
+        .test-section {
+            margin: 20px 0;
+            padding: 15px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Test Context Menu for Magnet Links</h1>
+    
+    <div class="instructions">
+        <h3>Testing Instructions:</h3>
+        <ol>
+            <li>Make sure your Chrome extension is installed and enabled</li>
+            <li>Right-click on any of the magnet links below</li>
+            <li>You should see a "gigaQNAP Options" context menu</li>
+            <li>Check the browser console for any error messages</li>
+        </ol>
+    </div>
+
+    <div class="test-section">
+        <h3>Test Magnet Links:</h3>
+        <p>Right-click on these links to test the context menu:</p>
+        
+        <a href="magnet:?xt=urn:btih:1234567890abcdef1234567890abcdef12345678&dn=Test+Torrent+1" class="magnet-link">
+            Test Torrent 1
+        </a>
+        
+        <br>
+        
+        <a href="magnet:?xt=urn:btih:abcdef1234567890abcdef1234567890abcdef12&dn=Test+Torrent+2" class="magnet-link">
+            Test Torrent 2
+        </a>
+        
+        <br>
+        
+        <a href="magnet:?xt=urn:btih:fedcba0987654321fedcba0987654321fedcba09&dn=Test+Torrent+3" class="magnet-link">
+            Test Torrent 3
+        </a>
+    </div>
+
+    <div class="test-section">
+        <h3>Regular Links (for comparison):</h3>
+        <p>These should NOT show the gigaQNAP context menu:</p>
+        
+        <a href="https://example.com" class="magnet-link">
+            Regular Link 1
+        </a>
+        
+        <br>
+        
+        <a href="https://google.com" class="magnet-link">
+            Regular Link 2
+        </a>
+    </div>
+
+    <div class="test-section">
+        <h3>Debug Information:</h3>
+        <p>Check the browser console (F12 → Console) for extension messages.</p>
+        <p>You should see logs about context menu creation and verification.</p>
+    </div>
+
+    <script>
+        // Add some debugging
+        console.log('Test page loaded');
+        
+        // Check if extension is working
+        if (typeof chrome !== 'undefined' && chrome.runtime) {
+            console.log('Chrome extension runtime detected');
+            
+            // Try to communicate with the extension
+            chrome.runtime.sendMessage({action: 'verifyContextMenus'}, (response) => {
+                if (chrome.runtime.lastError) {
+                    console.error('Extension communication error:', chrome.runtime.lastError);
+                } else {
+                    console.log('Extension response:', response);
+                }
+            });
+        } else {
+            console.log('Chrome extension runtime not detected');
+        }
+    </script>
+</body>
+</html>

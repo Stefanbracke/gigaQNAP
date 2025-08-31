@@ -1,0 +1,16 @@
+<svg width="128" height="128" viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background circle -->
+  <circle cx="64" cy="64" r="60" fill="#007bff" stroke="#0056b3" stroke-width="4"/>
+  
+  <!-- Magnet icon -->
+  <path d="M40 30 L40 50 L50 50 L50 30 Z" fill="white"/>
+  <path d="M78 30 L78 50 L88 50 L88 30 Z" fill="white"/>
+  <path d="M45 50 L45 70 L83 70 L83 50 Z" fill="white"/>
+  
+  <!-- Download arrow -->
+  <path d="M64 80 L64 95 M56 87 L64 95 L72 87" stroke="white" stroke-width="3" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+  
+  <!-- QNAP indicator -->
+  <text x="64" y="110" text-anchor="middle" fill="white" font-family="Arial, sans-serif" font-size="12" font-weight="bold">QNAP</text>
+</svg>
+

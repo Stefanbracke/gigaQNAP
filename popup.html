@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>gigaQNAP Magnet Handler</title>
+  <style>
+    body {
+      width: 400px;
+      padding: 20px;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      margin: 0;
+      background: #f8f9fa;
+    }
+    
+    .header {
+      text-align: center;
+      margin-bottom: 20px;
+      padding-bottom: 15px;
+      border-bottom: 2px solid #007bff;
+    }
+    
+    .header h1 {
+      margin: 0;
+      color: #007bff;
+      font-size: 18px;
+      font-weight: 600;
+    }
+    
+    .form-group {
+      margin-bottom: 15px;
+    }
+    
+    label {
+      display: block;
+      margin-bottom: 5px;
+      font-weight: 500;
+      color: #495057;
+      font-size: 14px;
+    }
+    
+    input[type="text"],
+    input[type="password"],
+    input[type="number"] {
+      width: 100%;
+      padding: 8px 12px;
+      border: 1px solid #ced4da;
+      border-radius: 4px;
+      font-size: 14px;
+      box-sizing: border-box;
+      transition: border-color 0.15s ease-in-out;
+    }
+    
+    input[type="text"]:focus,
+    input[type="password"]:focus,
+    input[type="number"]:focus {
+      outline: none;
+      border-color: #007bff;
+      box-shadow: 0 0 0 2px rgba(0, 123, 255, 0.25);
+    }
+    
+    .checkbox-group {
+      display: flex;
+      align-items: center;
+      margin-bottom: 15px;
+    }
+    
+    .checkbox-group input[type="checkbox"] {
+      margin-right: 8px;
+      width: auto;
+    }
+    
+    .checkbox-group label {
+      margin-bottom: 0;
+      cursor: pointer;
+    }
+    
+    .btn {
+      background: #007bff;
+      color: white;
+      border: none;
+      padding: 10px 20px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 500;
+      transition: background-color 0.15s ease-in-out;
+      width: 100%;
+    }
+    
+    .btn:hover {
+      background: #0056b3;
+    }
+    
+    .btn:active {
+      background: #004085;
+    }
+    
+    .btn-secondary {
+      background: #6c757d;
+      margin-top: 10px;
+    }
+    
+    .btn-secondary:hover {
+      background: #545b62;
+    }
+    
+    .btn-info {
+      background: #17a2b8;
+      margin-top: 10px;
+    }
+    
+    .btn-info:hover {
+      background: #138496;
+    }
+    
+    .status {
+      margin-top: 15px;
+      padding: 10px;
+      border-radius: 4px;
+      font-size: 13px;
+      text-align: center;
+      display: none;
+    }
+    
+    .status.success {
+      background: #d4edda;
+      color: #155724;
+      border: 1px solid #c3e6cb;
+    }
+    
+    .status.error {
+      background: #f8d7da;
+      color: #721c24;
+      border: 1px solid #f5c6cb;
+    }
+    
+    .test-section {
+      margin-top: 20px;
+      padding-top: 15px;
+      border-top: 1px solid #dee2e6;
+    }
+    
+    .help-text {
+      font-size: 12px;
+      color: #6c757d;
+      margin-top: 5px;
+      line-height: 1.4;
+    }
+    
+    .usage-info {
+      background: #e7f3ff;
+      padding: 15px;
+      border-radius: 6px;
+      margin: 20px 0;
+      border-left: 4px solid #007bff;
+    }
+    
+    .usage-info h3 {
+      margin: 0 0 10px 0;
+      color: #007bff;
+      font-size: 14px;
+    }
+    
+    .usage-info p {
+      margin: 0;
+      font-size: 13px;
+      line-height: 1.4;
+    }
+    
+    .directory-section {
+      background: #f8f9fa;
+      padding: 15px;
+      border-radius: 6px;
+      margin: 15px 0;
+      border: 1px solid #dee2e6;
+    }
+    
+    .directory-section h3 {
+      margin: 0 0 10px 0;
+      color: #495057;
+      font-size: 14px;
+    }
+    
+    .directory-item {
+      display: flex;
+      align-items: center;
+      margin-bottom: 10px;
+      gap: 10px;
+    }
+    
+    .directory-item input[type="text"] {
+      flex: 1;
+    }
+    
+    .directory-item input[type="text"] {
+      width: auto;
+    }
+    
+    .remove-dir-btn {
+      background: #dc3545;
+      color: white;
+      border: none;
+      padding: 6px 12px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 12px;
+    }
+    
+    .remove-dir-btn:hover {
+      background: #c82333;
+    }
+    
+    .add-dir-btn {
+      background: #28a745;
+      color: white;
+      border: none;
+      padding: 8px 16px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 13px;
+      margin-top: 10px;
+    }
+    
+    .add-dir-btn:hover {
+      background: #218838;
+    }
+    
+    .api-info {
+      background: #fff3cd;
+      padding: 15px;
+      border-radius: 6px;
+      margin: 15px 0;
+      border-left: 4px solid #ffc107;
+    }
+    
+    .api-info h3 {
+      margin: 0 0 10px 0;
+      color: #856404;
+      font-size: 14px;
+    }
+    
+    .api-info p {
+      margin: 0;
+      font-size: 12px;
+      line-height: 1.4;
+      color: #856404;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>🔗 gigaQNAP Magnet Handler</h1>
+  </div>
+  
+  <div class="usage-info">
+    <h3>How to Use:</h3>
+    <p>Right-click on any magnet link to see options:<br>
+    • <strong>Send to gigaQNAP</strong> - Choose directory and download to your NAS<br>
+    • <strong>Copy Magnet Link</strong> - Copies to clipboard</p>
+  </div>
+  
+  <div class="api-info">
+    <h3>QNAP API Info:</h3>
+    <p>Uses Download Station V4 API:<br>
+    • <strong>AddUrl</strong>: /downloadstation/V4/Task/AddUrl<br>
+    • <strong>Query</strong>: /downloadstation/V4/Task/Query<br>
+    • <strong>Parameters</strong>: sid, temp, move, url</p>
+  </div>
+  
+  <form id="configForm">
+    <div class="form-group">
+      <label for="qnapServer">QNAP Server IP Address:</label>
+      <input type="text" id="qnapServer" placeholder="172.28.1.250" required>
+      <div class="help-text">Your QNAP NAS local IP address</div>
+    </div>
+    
+    <div class="form-group">
+      <label for="qnapPort">Port (optional):</label>
+      <input type="number" id="qnapPort" placeholder="8080" min="1" max="65535">
+      <div class="help-text">Download Station port (default: 8080)</div>
+    </div>
+    
+    <div class="form-group">
+      <label for="qnapUsername">Username (optional):</label>
+      <input type="text" id="qnapUsername" placeholder="admin">
+      <div class="help-text">QNAP username if authentication is required</div>
+    </div>
+    
+    <div class="form-group">
+      <label for="qnapPassword">Password (optional):</label>
+      <input type="password" id="qnapPassword" placeholder="password">
+      <div class="help-text">QNAP password if authentication is required</div>
+    </div>
+    
+    <div class="directory-section">
+      <h3>Download Directories</h3>
+      <div id="directoryList">
+        <!-- Directories will be added here dynamically -->
+      </div>
+      <button type="button" class="add-dir-btn" id="addDirectory">+ Add Directory</button>
+      <div class="help-text">Add the directories where you want downloads to be saved. Use folder names like "Movies", "TV", etc. (not full paths).</div>
+    </div>
+    
+    <div class="checkbox-group">
+      <input type="checkbox" id="autoSend" checked>
+      <label for="autoSend">Enable automatic sending to QNAP</label>
+    </div>
+    
+    <button type="submit" class="btn">Save Configuration</button>
+  </form>
+  
+  <div class="test-section">
+    <button type="button" class="btn btn-secondary" id="testConnection">Test Connection</button>
+    <div class="help-text">Test if your QNAP server is reachable</div>
+    
+    <button type="button" class="btn btn-info" id="queryTasks">Query Current Tasks</button>
+    <div class="help-text">Query and display current download tasks from QNAP</div>
+    
+    <button type="button" class="btn btn-info" id="refreshMenus">Refresh Context Menus</button>
+    <div class="help-text">Manually refresh the right-click context menus</div>
+    
+    <button type="button" class="btn btn-info" id="verifyMenus">Verify Context Menus</button>
+    <div class="help-text">Check if context menus are properly created (check console)</div>
+    
+    <button type="button" class="btn btn-info" id="getMenuCount">Get Menu Count</button>
+    <div class="help-text">Get the current count of created context menus</div>
+    
+    <button type="button" class="btn btn-info" id="clearAndRecreate">Clear & Recreate Menus</button>
+    <div class="help-text">Remove all context menus and recreate them from scratch</div>
+  </div>
+  
+  <div id="status" class="status"></div>
+  
+  <script src="popup.js"></script>
+</body>
+</html>

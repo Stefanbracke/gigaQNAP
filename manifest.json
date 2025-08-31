@@ -1,0 +1,30 @@
+{
+  "manifest_version": 3,
+  "name": "gigaQNAP Magnet Link Handler",
+  "version": "1.0",
+  "description": "Intercepts magnet links and sends them to QNAP Download Station",
+  "permissions": [
+    "activeTab",
+    "storage",
+    "webRequest",
+    "contextMenus"
+  ],
+  "host_permissions": [
+    "http://*/*",
+    "https://*/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "run_at": "document_end"
+    }
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "gigaQNAP Magnet Handler"
+  }
+}
