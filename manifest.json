@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "name": "gigaQNAP Magnet Link Handler",
+  "name": "gigaQNAP - Magnet Link Handler",
   "version": "1.0",
   "description": "Intercepts magnet links and sends them to QNAP Download Station",
   "permissions": [
