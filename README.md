@@ -1,4 +1,4 @@
-# gigaQNAP Magnet Link Handler Chrome Extension
+# gigaQNAP - A smart Magnet Link Handler Chrome Extension
 
 A Chrome extension that provides right-click context menu options for magnet links, allowing you to send them directly to specific directories on your QNAP NAS Download Station or copy them to clipboard.
 
@@ -210,6 +210,12 @@ Feel free to submit issues, feature requests, or pull requests to improve this e
 ## License
 
 This project is open source and available under the MIT License.
+
+## About me
+Hello, i am Stefan Bracke, born in 1969 in Belgium.
+If you like this extension, please throw me a star on github.
+I am available on github and linkedin.
+Thank you for your support!
 
 ## Support
 

@@ -58,21 +58,12 @@ function verifyContextMenus() {
         }
       });
       
-      // Check if fallback menu exists
-      chrome.contextMenus.update('magnetOptionsFallback', {}, (fallbackSuccess) => {
+      // Check if direct copy menu exists
+      chrome.contextMenus.update('copyMagnetLinkDirect', {}, (copyDirectSuccess) => {
         if (chrome.runtime.lastError) {
-          console.error('magnetOptionsFallback menu not found:', chrome.runtime.lastError.message);
+          console.error('copyMagnetLinkDirect menu not found:', chrome.runtime.lastError.message);
         } else {
-          console.log('magnetOptionsFallback menu exists and is working');
-          
-          // Check if fallback copy menu exists
-          chrome.contextMenus.update('copyMagnetLinkFallback', {}, (copyFallbackSuccess) => {
-            if (chrome.runtime.lastError) {
-              console.error('copyMagnetLinkFallback menu not found:', chrome.runtime.lastError.message);
-            } else {
-              console.log('copyMagnetLinkFallback menu exists and is working');
-            }
-          });
+          console.log('copyMagnetLinkDirect menu exists and is working');
         }
       });
       
@@ -146,53 +137,25 @@ function createContextMenus() {
         });
       });
       
-      // Create a fallback menu that appears on all links for testing
+      // Create individual menu items directly (no parent menu)
+      // This will create a cleaner two-level structure
+      
+      // Create copy option directly
       chrome.contextMenus.create({
-        id: 'magnetOptionsFallback',
-        title: 'gigaQNAP Options (All Links)',
+        id: 'copyMagnetLinkDirect',
+        title: 'Copy Magnet Link',
         contexts: ['link']
       }, () => {
         if (chrome.runtime.lastError) {
-          console.error('Error creating fallback menu:', chrome.runtime.lastError.message || chrome.runtime.lastError);
-          return;
+          console.error('Error creating copyMagnetLinkDirect menu:', chrome.runtime.lastError.message || chrome.runtime.lastError);
+        } else {
+          console.log('copyMagnetLinkDirect menu created successfully');
+          createdMenuIds.add('copyMagnetLinkDirect');
         }
-        
-        console.log('Fallback menu created successfully');
-        createdMenuIds.add('magnetOptionsFallback');
-        
-        // Create copy option for fallback menu
-        chrome.contextMenus.create({
-          id: 'copyMagnetLinkFallback',
-          title: 'Copy Magnet Link',
-          contexts: ['link'],
-          parentId: 'magnetOptionsFallback'
-        }, () => {
-          if (chrome.runtime.lastError) {
-            console.error('Error creating copyMagnetLinkFallback menu:', chrome.runtime.lastError.message || chrome.runtime.lastError);
-          } else {
-            console.log('copyMagnetLinkFallback menu created successfully');
-            createdMenuIds.add('copyMagnetLinkFallback');
-          }
-        });
-        
-        // Create separator for fallback menu
-        chrome.contextMenus.create({
-          id: 'separatorFallback',
-          type: 'separator',
-          contexts: ['link'],
-          parentId: 'magnetOptionsFallback'
-        }, () => {
-          if (chrome.runtime.lastError) {
-            console.error('Error creating separatorFallback:', chrome.runtime.lastError.message || chrome.runtime.lastError);
-          } else {
-            console.log('separatorFallback created successfully');
-            createdMenuIds.add('separatorFallback');
-          }
-        });
-        
-        // Create directory options for fallback menu
-        createDirectoryMenusFallback();
       });
+      
+      // Create directory options directly
+      createDirectoryMenusDirect();
       
       // Verify menus after creation
       setTimeout(() => {
@@ -244,83 +207,47 @@ function createDirectoryMenus() {
   });
 }
 
-// Function to create directory-specific context menus for fallback (all links)
-function createDirectoryMenusFallback() {
-  console.log('Creating directory menus for fallback...');
+// Function to create directory-specific context menus directly (no parent menu)
+function createDirectoryMenusDirect() {
+  console.log('Creating directory menus directly...');
   
   chrome.storage.sync.get(['downloadDirectories'], function(items) {
     try {
       const directories = items.downloadDirectories || [];
-      console.log('Found directories for fallback:', directories);
+      console.log('Found directories for direct menus:', directories);
       
       directories.forEach((dir, index) => {
         if (dir.name && dir.path) {
-          console.log(`Creating fallback menu for directory ${index}: ${dir.name} -> ${dir.path}`);
+          console.log(`Creating direct menu for directory ${index}: ${dir.name} -> ${dir.path}`);
           
           chrome.contextMenus.create({
-            id: `sendToDirectoryFallback_${index}`,
+            id: `sendToDirectoryDirect_${index}`,
             title: `Download to: ${dir.name}`,
-            contexts: ['link'],
-            parentId: 'magnetOptionsFallback'
+            contexts: ['link']
           }, () => {
             if (chrome.runtime.lastError) {
-              console.error(`Error creating fallback directory menu ${index}:`, chrome.runtime.lastError.message || chrome.runtime.lastError);
+              console.error(`Error creating direct directory menu ${index}:`, chrome.runtime.lastError.message || chrome.runtime.lastError);
             } else {
-              console.log(`Fallback directory menu ${index} created successfully`);
-              createdMenuIds.add(`sendToDirectoryFallback_${index}`);
+              console.log(`Direct directory menu ${index} created successfully`);
+              createdMenuIds.add(`sendToDirectoryDirect_${index}`);
             }
           });
         } else {
-          console.warn(`Skipping fallback directory ${index}: name=${dir.name}, path=${dir.path}`);
+          console.warn(`Skipping direct directory ${index}: name=${dir.name}, path=${dir.path}`);
         }
       });
       
-      console.log('Fallback directory menu creation completed');
+      console.log('Direct directory menu creation completed');
       
-      // Create a simple test submenu to ensure subitems work
-      createTestSubmenu();
+      // Create a debug menu that appears on all pages
+      createDebugMenu();
     } catch (error) {
-      console.error('Error in createDirectoryMenusFallback:', error);
+      console.error('Error in createDirectoryMenusDirect:', error);
     }
   });
-  
-  // Create a debug menu that appears on all pages
-  createDebugMenu();
 }
 
-// Function to create a simple test submenu
-function createTestSubmenu() {
-  console.log('Creating test submenu...');
-  
-  chrome.contextMenus.create({
-    id: 'testSubmenu',
-    title: 'Test Submenu',
-    contexts: ['link'],
-    parentId: 'magnetOptionsFallback'
-  }, () => {
-    if (chrome.runtime.lastError) {
-      console.error('Error creating test submenu:', chrome.runtime.lastError.message || chrome.runtime.lastError);
-    } else {
-      console.log('Test submenu created successfully');
-      createdMenuIds.add('testSubmenu');
-      
-      // Create a test subitem
-      chrome.contextMenus.create({
-        id: 'testSubitem',
-        title: 'Test Action',
-        contexts: ['link'],
-        parentId: 'testSubmenu'
-      }, () => {
-        if (chrome.runtime.lastError) {
-          console.error('Error creating test subitem:', chrome.runtime.lastError.message || chrome.runtime.lastError);
-        } else {
-          console.log('Test subitem created successfully');
-          createdMenuIds.add('testSubitem');
-        }
-      });
-    }
-  });
-}
+
 
 // Function to create a debug menu that appears on all pages
 function createDebugMenu() {
@@ -376,30 +303,14 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
     
     if (info.menuItemId === 'copyMagnetLink') {
       copyMagnetLinkToClipboard(info.linkUrl, tab.id);
-    } else if (info.menuItemId === 'copyMagnetLinkFallback') {
+    } else if (info.menuItemId === 'copyMagnetLinkDirect') {
       copyMagnetLinkToClipboard(info.linkUrl, tab.id);
     } else if (info.menuItemId.startsWith('sendToDirectory_')) {
       const index = parseInt(info.menuItemId.split('_')[1]);
       sendToSpecificDirectory(info.linkUrl, tab.url, index);
-    } else if (info.menuItemId.startsWith('sendToDirectoryFallback_')) {
+    } else if (info.menuItemId.startsWith('sendToDirectoryDirect_')) {
       const index = parseInt(info.menuItemId.split('_')[1]);
       sendToSpecificDirectory(info.linkUrl, tab.url, index);
-    } else if (info.menuItemId === 'magnetOptionsFallback') {
-      // Handle fallback menu - check if it's actually a magnet link
-      if (info.linkUrl && info.linkUrl.startsWith('magnet:')) {
-        // Show options for magnet links
-        console.log('Fallback menu clicked on magnet link:', info.linkUrl);
-        // You could open a popup or show options here
-      } else {
-        console.log('Fallback menu clicked on non-magnet link:', info.linkUrl);
-      }
-    } else if (info.menuItemId === 'testSubitem') {
-      console.log('Test subitem clicked! This confirms submenus are working.');
-      // Show a simple alert to confirm it's working
-      chrome.action.setBadgeText({ text: '✓', tabId: tab.id });
-      setTimeout(() => {
-        chrome.action.setBadgeText({ text: '', tabId: tab.id });
-      }, 2000);
     } else if (info.menuItemId === 'debugInfo') {
       console.log('Debug info requested');
       console.log('Current tracked menu IDs:', Array.from(createdMenuIds));
@@ -533,8 +444,7 @@ function getContextMenuCount() {
     
     // Try to update each known menu ID to see if it exists
     const knownIds = [
-      'magnetOptions', 'copyMagnetLink', 'magnetOptionsFallback', 
-      'copyMagnetLinkFallback', 'separatorFallback'
+      'magnetOptions', 'copyMagnetLink', 'copyMagnetLinkDirect'
     ];
     
     knownIds.forEach((id, index) => {
