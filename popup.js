@@ -2,7 +2,6 @@
 document.addEventListener('DOMContentLoaded', function() {
   const configForm = document.getElementById('configForm');
   const testConnectionBtn = document.getElementById('testConnection');
-  const queryTasksBtn = document.getElementById('queryTasks');
   const statusDiv = document.getElementById('status');
   const addDirectoryBtn = document.getElementById('addDirectory');
   const directoryList = document.getElementById('directoryList');
@@ -19,11 +18,6 @@ document.addEventListener('DOMContentLoaded', function() {
   // Handle test connection
   testConnectionBtn.addEventListener('click', function() {
     testConnection();
-  });
-  
-  // Handle query tasks
-  queryTasksBtn.addEventListener('click', function() {
-    queryTasks();
   });
   
   // Handle test endpoints

@@ -3,10 +3,49 @@
 // Track created context menu IDs
 let createdMenuIds = new Set();
 
+// Task counter for badge display
+let taskCounter = 0;
+
+// Function to update the badge counter on the extension icon
+async function updateTaskCounter(increment = false) {
+  try {
+    if (increment) {
+      taskCounter++;
+      // Store counter in storage for persistence
+      await chrome.storage.local.set({ taskCounter: taskCounter });
+    } else {
+      // Load counter from storage
+      const stored = await chrome.storage.local.get(['taskCounter']);
+      taskCounter = stored.taskCounter || 0;
+    }
+    
+    // Update badge text (show counter if > 0)
+    if (taskCounter > 0) {
+      chrome.action.setBadgeText({ text: taskCounter.toString() });
+      chrome.action.setBadgeBackgroundColor({ color: '#4CAF50' }); // Green for success
+    } else {
+      chrome.action.setBadgeText({ text: '' });
+    }
+    
+    // Auto-reset counter after 5 seconds (optional - remove if you want it to persist)
+    if (increment && taskCounter > 0) {
+      setTimeout(async () => {
+        taskCounter = 0;
+        await chrome.storage.local.set({ taskCounter: 0 });
+        chrome.action.setBadgeText({ text: '' });
+      }, 5000);
+    }
+  } catch (error) {
+    console.error('Failed to update task counter:', error);
+  }
+}
+
+
 // Handle extension startup
 chrome.runtime.onStartup.addListener(() => {
   console.log('Extension started, creating context menus...');
   createContextMenus();
+  updateTaskCounter(false); // Load counter on startup
 });
 
 chrome.runtime.onInstalled.addListener(() => {
@@ -25,6 +64,7 @@ chrome.runtime.onInstalled.addListener(() => {
   }, () => {
     console.log('Default configuration set, creating context menus...');
     createContextMenus();
+    updateTaskCounter(false); // Load counter on install
   });
 });
 
@@ -404,118 +444,129 @@ async function loginToQnap(server, port, username, password) {
   }
 }
 
-// Attempt login to QNAP Download Station to obtain a session ID
-// Tries multiple endpoint variations to find the correct one
-// Uses 'user' and 'pass' parameters, with password Base64 encoded
+// Attempt login to QNAP Download Station to obtain session ID and token
+// Endpoint: /downloadstation/V4/Misc/Login
+// Uses POST with 'user' and 'pass' parameters, password Base64 encoded
+// Returns both sid and token for use in subsequent API calls
 async function loginToDownloadStation(server, port, username, password) {
   if (!username || !password) {
     return { ok: false, reason: 'missing_credentials' };
   }
 
   const baseUrl = getQnapBaseUrl(server, port);
+  const loginUrl = `${baseUrl}/downloadstation/V4/Misc/Login`;
   
-  // Try multiple endpoint variations
-  const endpoints = [
-    '/downloadstation/V4/Misc/Login',      // Ruby example pattern
-    '/downloadstation/V4/Login',            // Simplified V4
-    '/downloadstation/V3/Misc/Login',       // V3 with Misc
-    '/downloadstation/V3/Login',            // Simplified V3
-    '/downloadstation/login.cgi',            // CGI style
-    '/cgi-bin/downloadstation/login.cgi',   // Full CGI path
-    '/downloadstation/Misc/Login',           // No version
-    '/downloadstation/Login'                 // Simplest
-  ];
-  
-  // Try different parameter name combinations
-  const paramVariations = [
-    { user: 'user', pass: 'pass' },           // Ruby example: user + pass (Base64)
-    { user: 'username', pass: 'password' },  // Alternative: username + password (plain)
-    { user: 'user', pass: 'password' },      // Mixed: user + password (plain)
-    { user: 'username', pass: 'pass' }       // Mixed: username + pass (Base64)
-  ];
+  try {
+    // Prepare form data: user and Base64 encoded password
+    const formBody = new URLSearchParams();
+    formBody.set('user', username);
+    const encodedPassword = btoa(password);
+    formBody.set('pass', encodedPassword);
 
-  for (const endpoint of endpoints) {
-    for (const params of paramVariations) {
-      try {
-        const formBody = new URLSearchParams();
-        formBody.set(params.user, username);
-        
-        // Base64 encode password for 'pass' parameter, plain for 'password'
-        if (params.pass === 'pass') {
-          const encodedPassword = btoa(password);
-          formBody.set(params.pass, encodedPassword);
-        } else {
-          formBody.set(params.pass, password);
-        }
+    console.log('Attempting Download Station login:', loginUrl);
+    console.log('User:', username);
+    
+    const resp = await fetch(loginUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: formBody.toString(),
+      credentials: 'include'
+    });
+    
+    const text = await resp.text();
+    console.log('Login response status:', resp.status);
+    console.log('Login response:', text);
+    
+    // Parse JSON response
+    let parsed;
     try {
-      const loginUrl = `${baseUrl}${endpoint}`;
-      console.log(`Attempting login endpoint: ${loginUrl}`);
-      
-      const resp = await fetch(loginUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: formBody.toString(),
-        credentials: 'include'
-      });
-      
-      console.log(`Response status: ${resp.status} for ${endpoint}`);
-      
-      // If we get 404, try next endpoint
-      if (resp.status === 404) {
-        console.log(`404 error for ${endpoint}, trying next...`);
-        continue;
-      }
-      
-      const text = await resp.text();
-      console.log(`Response from ${endpoint}:`, text.substring(0, 500));
-      
-      // Try to parse as JSON
-      let parsed;
-      try {
-        parsed = JSON.parse(text);
-        
-        // Check for error in JSON response (error > 0 means failure)
-        if (parsed.error && parsed.error > 0) {
-          console.log(`Login failed with error ${parsed.error}:`, parsed.reason);
-          // If it's a session/auth error (not 404), this endpoint might be correct but credentials wrong
-          if (parsed.error !== 5) { // error 5 is session error, might mean endpoint is right
-            continue; // Try next endpoint
-          }
-          return { ok: false, status: resp.status, body: text, error: parsed.error, reason: parsed.reason, endpoint };
-        }
-        
-        // Success: extract sid from response
-        if (parsed.sid) {
-          console.log(`Login successful! sid: ${parsed.sid} (endpoint: ${endpoint})`);
-          return { ok: true, status: resp.status, body: text, sid: parsed.sid, endpoint };
-        } else {
-          console.warn(`Login response missing sid from ${endpoint}:`, parsed);
-          // Continue to try other endpoints
-          continue;
-        }
-      } catch (e) {
-        // Not JSON, try XML as fallback
-        console.log(`Response from ${endpoint} is not JSON, trying XML parsing...`);
-        const sidMatch = text.match(/<sid>([^<]+)<\/sid>/i) || text.match(/sid["\s:=]+([^"<\s]+)/i);
-        const sid = sidMatch ? sidMatch[1] : undefined;
-        if (sid) {
-          console.log(`Found sid in XML response from ${endpoint}:`, sid);
-          return { ok: resp.ok, status: resp.status, body: text, sid, endpoint };
-        }
-        // If we got a non-404 response but can't parse it, endpoint might be wrong
-        if (resp.status !== 200) {
-          continue;
-        }
-      }
+      parsed = JSON.parse(text);
     } catch (e) {
-      console.log(`Error trying ${endpoint}:`, e.message);
-      continue; // Try next endpoint
+      console.error('Failed to parse login response as JSON:', e);
+      return { ok: false, status: resp.status, body: text, error: 'parse_error', reason: 'Response is not valid JSON' };
     }
+    
+    // Check for error in response (error > 0 means failure)
+    if (parsed.error && parsed.error > 0) {
+      console.error('Login failed with error:', parsed.error, parsed.reason);
+      return { ok: false, status: resp.status, body: text, error: parsed.error, reason: parsed.reason };
+    }
+    
+    // Success: extract both sid and token from response
+    if (parsed.sid) {
+      const token = parsed.token || null;
+      console.log('Login successful! sid:', parsed.sid, 'token:', token);
+      return { 
+        ok: true, 
+        status: resp.status, 
+        body: text, 
+        sid: parsed.sid, 
+        token: token,
+        user: parsed.user,
+        admin: parsed.admin,
+        privilege: parsed.privilege
+      };
+    } else {
+      console.error('Login response missing sid:', parsed);
+      return { ok: false, status: resp.status, body: text, error: 'no_sid', reason: 'Response missing sid field' };
+    }
+  } catch (e) {
+    console.error('Login request failed:', e.message);
+    return { ok: false, error: e.message || 'network_error' };
   }
+}
+
+// Logout from QNAP Download Station
+// Endpoint: /downloadstation/V4/Misc/Logout?sid=...
+// Only requires sid as query parameter
+async function logoutFromDownloadStation(server, port, sid) {
+  if (!sid) {
+    console.warn('No sid provided for logout');
+    return { ok: false, reason: 'missing_sid' };
+  }
+
+  const baseUrl = getQnapBaseUrl(server, port);
+  const logoutUrl = `${baseUrl}/downloadstation/V4/Misc/Logout?sid=${encodeURIComponent(sid)}`;
   
-  // If all endpoints failed, try QTS login as fallback
-  console.log('All Download Station login endpoints failed, trying QTS login as fallback...');
-  return await loginToQnap(server, port, username, password);
+  try {
+    console.log('Attempting Download Station logout:', logoutUrl);
+    
+    const resp = await fetch(logoutUrl, {
+      method: 'GET',
+      credentials: 'include'
+    });
+    
+    const text = await resp.text();
+    console.log('Logout response status:', resp.status);
+    console.log('Logout response:', text);
+    
+    // Parse JSON response
+    let parsed;
+    try {
+      parsed = JSON.parse(text);
+    } catch (e) {
+      // Not JSON, that's okay - logout might return empty or different format
+      console.log('Logout response is not JSON, assuming success');
+      return { ok: resp.ok, status: resp.status, body: text };
+    }
+    
+    // Check for error in response (error > 0 means failure)
+    if (parsed.error && parsed.error > 0) {
+      console.error('Logout failed with error:', parsed.error, parsed.reason);
+      return { ok: false, status: resp.status, body: text, error: parsed.error, reason: parsed.reason };
+    }
+    
+    // Success
+    console.log('Logout successful');
+    return { 
+      ok: true, 
+      status: resp.status, 
+      body: text
+    };
+  } catch (e) {
+    console.error('Logout request failed:', e.message);
+    return { ok: false, error: e.message || 'network_error' };
+  }
 }
 
 // Try to parse QNAP Download Station JSON; return {ok, error, raw}
@@ -565,193 +616,122 @@ async function sendToSpecificDirectory(magnetUrl, pageUrl, directoryIndex) {
       magnetUrl: magnetUrl
     });
 
-    // Try multiple QNAP Download Station API endpoints
-    const endpoints = [
-      // Method 1: Standard Download Station API
-      `http://${config.qnapServer}:${config.qnapPort || '8080'}/downloadstation/V4/Task/AddUrl`,
-      // Method 2: Alternative endpoint
-      `http://${config.qnapServer}:${config.qnapPort || '8080'}/downloadstation/V4/Task/Add`,
-      // Method 3: Legacy endpoint
-      `http://${config.qnapServer}:${config.qnapPort || '8080'}/downloadstation/V3/Task/AddUrl`
-    ];
+    // Use the confirmed working endpoint: GET with query parameters
+    const baseEndpoint = `http://${config.qnapServer}:${config.qnapPort || '8080'}/downloadstation/V4/Task/AddUrl`;
 
     let success = false;
     let lastError = null;
     let didLogin = false;
     let sid = undefined;
+    let token = undefined;
 
-    // Proactively login to Download Station to obtain sid
+    // Proactively login to Download Station to obtain sid and token
     if (config.qnapUsername && config.qnapPassword) {
       console.log('Credentials provided, attempting login...');
       const loginResult = await loginToDownloadStation(config.qnapServer, config.qnapPort, config.qnapUsername, config.qnapPassword);
       didLogin = true;
       sid = loginResult.sid;
+      token = loginResult.token;
       console.log('Initial Download Station login attempt before AddUrl:', { 
         ok: loginResult.ok, 
-        hasSid: Boolean(sid), 
+        hasSid: Boolean(sid),
+        hasToken: Boolean(token),
         status: loginResult.status,
         error: loginResult.error,
         reason: loginResult.reason
       });
       
-      if (!sid && loginResult.ok) {
-        // If login succeeded but no sid in response, try QTS login as fallback
-        console.log('No sid from Download Station login, trying QTS login...');
-        const qtsLoginResult = await loginToQnap(config.qnapServer, config.qnapPort, config.qnapUsername, config.qnapPassword);
-        sid = qtsLoginResult.sid;
-        console.log('QTS login result:', { ok: qtsLoginResult.ok, hasSid: Boolean(sid), status: qtsLoginResult.status });
-      }
-      
       if (!sid && !loginResult.ok) {
         console.error('Login failed! Error:', loginResult.error, 'Reason:', loginResult.reason);
         throw new Error(`Failed to authenticate with QNAP: ${loginResult.reason || loginResult.error || 'Unknown error'}`);
+      }
+      
+      if (!sid) {
+        console.error('Login succeeded but no sid received');
+        throw new Error('Login succeeded but no session ID (sid) received from QNAP');
       }
     } else {
       console.warn('No credentials provided - request may fail with session error');
     }
 
-    for (const endpoint of endpoints) {
-      try {
-        console.log(`Trying endpoint: ${endpoint}`);
-        
-        // Method 1: Form data approach
-        if (endpoint.includes('AddUrl')) {
-          // Match frontend: application/x-www-form-urlencoded with temp/move/url/sid
-          const bodyParams = new URLSearchParams();
-          bodyParams.set('temp', 'Download');
-          bodyParams.set('move', targetDir.path); // path should match QNAP share/folder
-          bodyParams.set('url', magnetUrl);
-          if (sid) {
-            bodyParams.set('sid', sid);
-            console.log('Including sid in request:', sid);
-          } else {
-            console.warn('No sid available for request - this may cause session error');
-          }
-
-          const requestOptions = {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
-              'X-Requested-With': 'XMLHttpRequest',
-              'Origin': getQnapBaseUrl(config.qnapServer, config.qnapPort),
-              'Pragma': 'no-cache',
-              'Cache-Control': 'no-cache'
-            },
-            body: bodyParams.toString(),
-            credentials: 'include'
-          };
-
-          console.log('Sending request to:', endpoint);
-          console.log('Request body:', bodyParams.toString());
-          console.log('Has credentials:', config.qnapUsername && config.qnapPassword ? 'yes' : 'no');
-          console.log('Has sid:', sid ? 'yes' : 'no');
-
-          let response = await fetch(endpoint, requestOptions);
-          let parsed = await parseDownloadStationResponse(response);
-          
-          console.log('Response status:', response.status);
-          console.log('Response parsed:', parsed);
-
-          // If we got a session error (commonly error 5), try to login once and retry
-          if (!parsed.ok && parsed.error === 5 && config.qnapUsername && config.qnapPassword) {
-            console.log('Session error from Download Station, attempting Download Station login...');
-            const loginResult = await loginToDownloadStation(config.qnapServer, config.qnapPort, config.qnapUsername, config.qnapPassword);
-            didLogin = true;
-            sid = loginResult.sid || sid;
-            console.log('Download Station login result:', { ok: loginResult.ok, status: loginResult.status, hasSid: Boolean(sid) });
-            
-            // If Download Station login didn't give us a sid, try QTS login
-            if (!sid && loginResult.ok) {
-              console.log('No sid from Download Station login, trying QTS login...');
-              const qtsLoginResult = await loginToQnap(config.qnapServer, config.qnapPort, config.qnapUsername, config.qnapPassword);
-              sid = qtsLoginResult.sid || sid;
-              console.log('QTS login result:', { ok: qtsLoginResult.ok, hasSid: Boolean(sid) });
-            }
-            
-            // retry once after login
-            if (sid) {
-              bodyParams.set('sid', sid);
-            }
-            response = await fetch(endpoint, {
-              ...requestOptions,
-              body: bodyParams.toString()
-            });
-            parsed = await parseDownloadStationResponse(response);
-          }
-
-          if (parsed.ok) {
-            console.log(`Success with ${endpoint}:`, parsed.raw);
-            success = true;
-            break;
-          } else {
-            lastError = new Error(parsed.reason || `HTTP ${response.status}`);
-          }
-        }
-        
-        // Method 2: JSON approach
-        else if (endpoint.includes('Add')) {
-          const jsonData = {
-            url: magnetUrl,
-            destination: targetDir.path,
-            type: 'url'
-          };
-          
-          const requestOptions = {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json'
-            },
-            body: JSON.stringify(jsonData),
-            credentials: 'include'
-          };
-
-          if (config.qnapUsername && config.qnapPassword) {
-            const credentials = btoa(`${config.qnapUsername}:${config.qnapPassword}`);
-            requestOptions.headers['Authorization'] = `Basic ${credentials}`;
-          }
-
-          let response = await fetch(endpoint, requestOptions);
-          let parsed = await parseDownloadStationResponse(response);
-
-          if (!parsed.ok && parsed.error === 5 && config.qnapUsername && config.qnapPassword) {
-            console.log('Session error from Download Station (JSON), attempting Download Station login...');
-            const loginResult = await loginToDownloadStation(config.qnapServer, config.qnapPort, config.qnapUsername, config.qnapPassword);
-            didLogin = true;
-            sid = loginResult.sid;
-            console.log('Download Station login result:', { ok: loginResult.ok, status: loginResult.status, hasSid: Boolean(sid) });
-            
-            // If Download Station login didn't give us a sid, try QTS login
-            if (!sid && loginResult.ok) {
-              console.log('No sid from Download Station login, trying QTS login...');
-              const qtsLoginResult = await loginToQnap(config.qnapServer, config.qnapPort, config.qnapUsername, config.qnapPassword);
-              sid = qtsLoginResult.sid || sid;
-              console.log('QTS login result:', { ok: qtsLoginResult.ok, hasSid: Boolean(sid) });
-            }
-            
-            // Add sid to JSON request if we have one
-            if (sid) {
-              jsonData.sid = sid;
-              requestOptions.body = JSON.stringify(jsonData);
-            }
-            
-            response = await fetch(endpoint, requestOptions);
-            parsed = await parseDownloadStationResponse(response);
-          }
-
-          if (parsed.ok) {
-            console.log(`Success with ${endpoint}:`, parsed.raw);
-            success = true;
-            break;
-          } else {
-            lastError = new Error(parsed.reason || `HTTP ${response.status}`);
-          }
-        }
-        
-      } catch (error) {
-        console.log(`Failed with ${endpoint}:`, error.message);
-        lastError = error;
-        continue;
+    // Both sid and token are REQUIRED for all Download Station API calls
+    if (!sid) {
+      throw new Error('Session ID (sid) is required but not available. Please ensure credentials are configured and login succeeded.');
+    }
+    
+    try {
+      // Build URL with query parameters (GET method - confirmed working)
+      const queryParams = new URLSearchParams();
+      queryParams.set('sid', sid);
+      if (token) {
+        queryParams.set('token', token);
       }
+      queryParams.set('temp', 'Download');
+      queryParams.set('move', targetDir.path); // path should match QNAP share/folder
+      queryParams.set('url', magnetUrl);
+      
+      const fullUrl = `${baseEndpoint}?${queryParams.toString()}`;
+      
+      console.log('Sending request to:', fullUrl);
+      console.log('Has credentials:', config.qnapUsername && config.qnapPassword ? 'yes' : 'no');
+      console.log('Has sid:', sid ? 'yes (' + sid + ')' : 'no');
+      console.log('Has token:', token ? 'yes (' + token + ')' : 'no');
+
+      const requestOptions = {
+        method: 'GET',
+        headers: {
+          'X-Requested-With': 'XMLHttpRequest',
+          'Origin': getQnapBaseUrl(config.qnapServer, config.qnapPort),
+          'Pragma': 'no-cache',
+          'Cache-Control': 'no-cache'
+        },
+        credentials: 'include'
+      };
+
+      let response = await fetch(fullUrl, requestOptions);
+      let parsed = await parseDownloadStationResponse(response);
+      
+      console.log('Response status:', response.status);
+      console.log('Response parsed:', parsed);
+
+      // If we got a session error (commonly error 5), try to login once and retry
+      if (!parsed.ok && parsed.error === 5 && config.qnapUsername && config.qnapPassword) {
+        console.log('Session error from Download Station, attempting Download Station login...');
+        const loginResult = await loginToDownloadStation(config.qnapServer, config.qnapPort, config.qnapUsername, config.qnapPassword);
+        didLogin = true;
+        sid = loginResult.sid || sid;
+        token = loginResult.token || token;
+        console.log('Download Station login result:', { ok: loginResult.ok, status: loginResult.status, hasSid: Boolean(sid), hasToken: Boolean(token) });
+        
+        // Retry with new sid and token
+        const retryParams = new URLSearchParams();
+        retryParams.set('sid', sid);
+        if (token) {
+          retryParams.set('token', token);
+        }
+        retryParams.set('temp', 'Download');
+        retryParams.set('move', targetDir.path);
+        retryParams.set('url', magnetUrl);
+        
+        const retryUrl = `${baseEndpoint}?${retryParams.toString()}`;
+        response = await fetch(retryUrl, requestOptions);
+        parsed = await parseDownloadStationResponse(response);
+      }
+
+      if (parsed.ok) {
+        console.log(`Success! Task added to QNAP:`, parsed.raw);
+        success = true;
+        
+        // Update badge counter to show successful task submission
+        await updateTaskCounter(true);
+      } else {
+        lastError = new Error(parsed.reason || `HTTP ${response.status}`);
+        throw lastError;
+      }
+    } catch (error) {
+      console.error(`Failed to add task:`, error.message);
+      lastError = error;
+      throw error;
     }
 
     if (success) {
@@ -866,48 +846,6 @@ async function testQnapEndpoints() {
   }
 }
 
-// Function to query current tasks (for debugging/monitoring)
-async function queryCurrentTasks() {
-  try {
-    const config = await chrome.storage.sync.get([
-      'qnapServer',
-      'qnapPort',
-      'qnapUsername',
-      'qnapPassword'
-    ]);
-
-    if (!config.qnapServer) {
-      throw new Error('QNAP server address not configured');
-    }
-
-    const queryUrl = `http://${config.qnapServer}:${config.qnapPort || '8080'}/downloadstation/V4/Task/Query`;
-    
-    const requestOptions = {
-      method: 'GET',
-      headers: {}
-    };
-
-    if (config.qnapUsername && config.qnapPassword) {
-      const credentials = btoa(`${config.qnapUsername}:${config.qnapPassword}`);
-      requestOptions.headers['Authorization'] = `Basic ${credentials}`;
-    }
-
-    const response = await fetch(queryUrl, requestOptions);
-    
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-    }
-
-    const responseText = await response.text();
-    console.log('Current QNAP tasks:', responseText);
-    return responseText;
-
-  } catch (error) {
-    console.error('Failed to query QNAP tasks:', error);
-    throw error;
-  }
-}
-
 // Listen for messages from content script
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   try {
@@ -932,15 +870,6 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       console.log('Verifying context menus...');
       verifyContextMenus();
       sendResponse({ success: true });
-    } else if (request.action === 'queryTasks') {
-      queryCurrentTasks()
-        .then(result => {
-          sendResponse({ success: true, tasks: result });
-        })
-        .catch(error => {
-          sendResponse({ success: false, error: error.message });
-        });
-      return true;
     } else if (request.action === 'forceCreateContextMenus') {
       console.log('Force creating context menus...');
       createContextMenus();
