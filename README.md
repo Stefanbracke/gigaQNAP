@@ -226,3 +226,61 @@ If you encounter any issues or have questions:
 4. Ensure Download Station V4 API is accessible
 5. Check that target directories exist and are writable
 6. Use the "Query Current Tasks" button for debugging
+
+## API
+
+### Login
+
+```
+POST /downloadstation/V4/Misc/Login
+Content-Type: application/x-www-form-urlencoded
+user=admin&pass=Base64(password)
+```
+
+This will return a JSON response with the following fields:
+- `sid`: session ID
+- `token`: token
+- `user`: user
+- `admin`: admin
+- `privilege`: privilege
+- `error`: error
+- `reason`: reason
+
+Example response:
+```
+{
+  "sid": "sid_abc123_1234567890",
+  "token": "token_abc123_1234567890"
+}
+
+### Logout
+```
+GET /downloadstation/V4/Misc/Logout?sid=sid_abc123_1234567890
+```
+
+Example response:
+```
+{
+    "error": 0
+}
+```
+
+### Add Torrent
+```
+POST /downloadstation/V4/Task/AddTorrent
+Content-Type: application/x-www-form-urlencoded
+sid=sid_abc123_1234567890&temp=Download&move=Movies&url=magnet:?xt=urn:btih:...
+```
+
+
+### Add URL
+```
+POST /downloadstation/V4/Task/AddUrl
+Content-Type: application/x-www-form-urlencoded
+sid=sid_abc123_1234567890&temp=Download&move=Movies&url=magnet:?xt=urn:btih:...
+```
+
+### Query Tasks
+```
+GET /downloadstation/V4/Task/Query?sid=sid_abc123_1234567890
+```
