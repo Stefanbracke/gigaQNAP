@@ -26,6 +26,12 @@ document.addEventListener('DOMContentLoaded', function() {
     queryTasks();
   });
   
+  // Handle test endpoints
+  const testEndpointsBtn = document.getElementById('testEndpoints');
+  testEndpointsBtn.addEventListener('click', function() {
+    testEndpoints();
+  });
+  
   // Handle refresh context menus
   const refreshMenusBtn = document.getElementById('refreshMenus');
   refreshMenusBtn.addEventListener('click', function() {
@@ -282,6 +288,47 @@ document.addEventListener('DOMContentLoaded', function() {
         console.log('Current QNAP tasks:', response.tasks);
       } else {
         showStatus(`Failed to query tasks: ${response.error}`, 'error');
+      }
+    });
+  }
+  
+  // Function to test QNAP endpoints
+  function testEndpoints() {
+    const server = document.getElementById('qnapServer').value.trim();
+    const port = document.getElementById('qnapPort').value.trim() || '8080';
+    const username = document.getElementById('qnapUsername').value.trim();
+    const password = document.getElementById('qnapPassword').value.trim();
+    
+    if (!server) {
+      showStatus('Please enter a server IP address first', 'error');
+      return;
+    }
+    
+    if (!isValidIPAddress(server)) {
+      showStatus('Please enter a valid IP address', 'error');
+      return;
+    }
+    
+    showStatus('Testing QNAP endpoints...', 'success');
+    
+    // Send message to background script to test endpoints
+    chrome.runtime.sendMessage({action: 'testQnapEndpoints'}, function(response) {
+      if (response && response.success) {
+        showStatus('Endpoints tested successfully! Check console for detailed results.', 'success');
+        console.log('QNAP endpoint test results:', response.results);
+        
+        // Show a summary in the status
+        const workingEndpoints = Object.entries(response.results)
+          .filter(([endpoint, result]) => result.ok)
+          .map(([endpoint]) => endpoint);
+        
+        if (workingEndpoints.length > 0) {
+          showStatus(`Found ${workingEndpoints.length} working endpoints: ${workingEndpoints.join(', ')}`, 'success');
+        } else {
+          showStatus('No working endpoints found. Check QNAP configuration.', 'error');
+        }
+      } else {
+        showStatus(`Failed to test endpoints: ${response.error}`, 'error');
       }
     });
   }

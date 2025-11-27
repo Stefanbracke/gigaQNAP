@@ -353,6 +353,162 @@ function generateSessionId() {
   return 'sid_' + Math.random().toString(36).substr(2, 9) + '_' + Date.now();
 }
 
+// Build base URL for QNAP
+function getQnapBaseUrl(server, port) {
+  return `http://${server}:${port || '8080'}`;
+}
+
+// Attempt login to QNAP QTS to obtain a session cookie
+async function loginToQnap(server, port, username, password) {
+  if (!username || !password) {
+    return { ok: false, reason: 'missing_credentials' };
+  }
+
+  const baseUrl = getQnapBaseUrl(server, port);
+
+  // QNAP QTS auth (best-effort): try POST first, then fallback to GET
+  const formBody = new URLSearchParams();
+  formBody.set('user', username);
+  formBody.set('pwd', password);
+
+  // Primary: POST
+  try {
+    const resp = await fetch(`${baseUrl}/cgi-bin/authLogin.cgi`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: formBody.toString(),
+      // include so cookies like NAS_SID are stored by the browser
+      credentials: 'include'
+    });
+    const text = await resp.text();
+    // Try to extract sid from XML <authSid>...</authSid>
+    const sidMatch = text.match(/<authSid>([^<]+)<\/authSid>/i);
+    const sid = sidMatch ? sidMatch[1] : undefined;
+    return { ok: resp.ok, status: resp.status, body: text, sid };
+  } catch (e) {
+    // fall through to GET attempt
+  }
+
+  // Fallback: GET (some systems accept query params)
+  try {
+    const resp = await fetch(`${baseUrl}/cgi-bin/authLogin.cgi?user=${encodeURIComponent(username)}&pwd=${encodeURIComponent(password)}`, {
+      method: 'GET',
+      credentials: 'include'
+    });
+    const text = await resp.text();
+    const sidMatch = text.match(/<authSid>([^<]+)<\/authSid>/i);
+    const sid = sidMatch ? sidMatch[1] : undefined;
+    return { ok: resp.ok, status: resp.status, body: text, sid };
+  } catch (e2) {
+    return { ok: false, error: e2?.message || 'login_failed' };
+  }
+}
+
+// Attempt login to QNAP Download Station to obtain a session ID
+async function loginToDownloadStation(server, port, username, password) {
+  if (!username || !password) {
+    return { ok: false, reason: 'missing_credentials' };
+  }
+
+  const baseUrl = getQnapBaseUrl(server, port);
+
+  // Method 1: Try Download Station V4 Login endpoint with POST (form data)
+  try {
+    const formBody = new URLSearchParams();
+    formBody.set('username', username);
+    formBody.set('password', password);
+
+    console.log('Attempting Download Station V4 Login (POST)...');
+    const resp = await fetch(`${baseUrl}/downloadstation/V4/Login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: formBody.toString(),
+      credentials: 'include'
+    });
+    
+    const text = await resp.text();
+    console.log('Download Station V4 Login response:', text.substring(0, 200));
+    
+    let parsed;
+    try {
+      parsed = JSON.parse(text);
+    } catch (e) {
+      // Not JSON, try XML
+      const sidMatch = text.match(/<sid>([^<]+)<\/sid>/i) || text.match(/sid["\s:=]+([^"<\s]+)/i);
+      const sid = sidMatch ? sidMatch[1] : undefined;
+      if (sid) {
+        console.log('Found sid in XML response:', sid);
+        return { ok: resp.ok, status: resp.status, body: text, sid };
+      }
+    }
+    
+    // Check for error in JSON response
+    if (parsed && parsed.error === 0 && parsed.sid) {
+      console.log('Login successful, sid:', parsed.sid);
+      return { ok: true, status: resp.status, body: text, sid: parsed.sid };
+    } else if (parsed && parsed.sid) {
+      console.log('Login successful (with error code), sid:', parsed.sid);
+      return { ok: true, status: resp.status, body: text, sid: parsed.sid };
+    } else if (parsed) {
+      console.log('Login failed:', parsed.error, parsed.reason);
+      return { ok: false, status: resp.status, body: text, error: parsed.error, reason: parsed.reason };
+    }
+  } catch (e) {
+    console.log('Download Station V4 Login (POST) failed:', e.message);
+  }
+
+  // Method 2: Try Download Station V4 Login endpoint with GET (query params)
+  try {
+    console.log('Attempting Download Station V4 Login (GET)...');
+    const resp = await fetch(`${baseUrl}/downloadstation/V4/Login?username=${encodeURIComponent(username)}&password=${encodeURIComponent(password)}`, {
+      method: 'GET',
+      credentials: 'include'
+    });
+    
+    const text = await resp.text();
+    console.log('Download Station V4 Login (GET) response:', text.substring(0, 200));
+    
+    let parsed;
+    try {
+      parsed = JSON.parse(text);
+      if (parsed && parsed.sid) {
+        console.log('Login successful (GET), sid:', parsed.sid);
+        return { ok: true, status: resp.status, body: text, sid: parsed.sid };
+      }
+    } catch (e) {
+      // Not JSON, try XML
+      const sidMatch = text.match(/<sid>([^<]+)<\/sid>/i) || text.match(/sid["\s:=]+([^"<\s]+)/i);
+      const sid = sidMatch ? sidMatch[1] : undefined;
+      if (sid) {
+        console.log('Found sid in XML response (GET):', sid);
+        return { ok: resp.ok, status: resp.status, body: text, sid };
+      }
+    }
+  } catch (e) {
+    console.log('Download Station V4 Login (GET) failed:', e.message);
+  }
+
+  // Fallback: Use QTS login and hope the session works for Download Station
+  console.log('Falling back to QTS login...');
+  return await loginToQnap(server, port, username, password);
+}
+
+// Try to parse QNAP Download Station JSON; return {ok, error, raw}
+async function parseDownloadStationResponse(response) {
+  const rawText = await response.text();
+  try {
+    const data = JSON.parse(rawText);
+    if (typeof data.error !== 'undefined') {
+      return { ok: data.error === 0, error: data.error, reason: data.reason, raw: rawText };
+    }
+    // Some endpoints might return different shapes; consider HTTP ok as success if no explicit error
+    return { ok: response.ok, raw: rawText };
+  } catch (_) {
+    // Not JSON; fallback to HTTP status only
+    return { ok: response.ok, raw: rawText };
+  }
+}
+
 // Function to send magnet link to specific directory
 async function sendToSpecificDirectory(magnetUrl, pageUrl, directoryIndex) {
   try {
@@ -377,57 +533,193 @@ async function sendToSpecificDirectory(magnetUrl, pageUrl, directoryIndex) {
       throw new Error('Selected directory not found or invalid');
     }
 
-    // Generate unique session ID
-    const sessionId = generateSessionId();
-
-    // Prepare the request to QNAP Download Station V4 API
-    const qnapUrl = `http://${config.qnapServer}:${config.qnapPort || '8080'}/downloadstation/V4/Task/AddUrl`;
-    
-    // Create form data for QNAP Download Station V4 API
-    const formData = new FormData();
-    formData.append('sid', sessionId);
-    formData.append('temp', 'Download'); // TEMP folder is always "Download"
-    formData.append('move', targetDir.path); // Target folder from settings
-    formData.append('url', magnetUrl); // The magnet URL
-    
-    // Prepare request options
-    const requestOptions = {
-      method: 'POST',
-      body: formData,
-      headers: {}
-    };
-
-    // Add authentication if provided
-    if (config.qnapUsername && config.qnapPassword) {
-      const credentials = btoa(`${config.qnapUsername}:${config.qnapPassword}`);
-      requestOptions.headers['Authorization'] = `Basic ${credentials}`;
-    }
-
     console.log('Sending to QNAP:', {
-      url: qnapUrl,
-      sid: sessionId,
-      temp: 'Download',
-      move: targetDir.path,
-      url: magnetUrl
+      server: config.qnapServer,
+      port: config.qnapPort || '8080',
+      targetDir: targetDir.name,
+      magnetUrl: magnetUrl
     });
 
-    // Send request to QNAP
-    const response = await fetch(qnapUrl, requestOptions);
-    
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    // Try multiple QNAP Download Station API endpoints
+    const endpoints = [
+      // Method 1: Standard Download Station API
+      `http://${config.qnapServer}:${config.qnapPort || '8080'}/downloadstation/V4/Task/AddUrl`,
+      // Method 2: Alternative endpoint
+      `http://${config.qnapServer}:${config.qnapPort || '8080'}/downloadstation/V4/Task/Add`,
+      // Method 3: Legacy endpoint
+      `http://${config.qnapServer}:${config.qnapPort || '8080'}/downloadstation/V3/Task/AddUrl`
+    ];
+
+    let success = false;
+    let lastError = null;
+    let didLogin = false;
+    let sid = undefined;
+
+    // Proactively login to Download Station to obtain sid
+    if (config.qnapUsername && config.qnapPassword) {
+      const loginResult = await loginToDownloadStation(config.qnapServer, config.qnapPort, config.qnapUsername, config.qnapPassword);
+      didLogin = true;
+      sid = loginResult.sid;
+      console.log('Initial Download Station login attempt before AddUrl:', { ok: loginResult.ok, hasSid: Boolean(sid), status: loginResult.status });
+      
+      if (!sid && loginResult.ok) {
+        // If login succeeded but no sid in response, try QTS login as fallback
+        console.log('No sid from Download Station login, trying QTS login...');
+        const qtsLoginResult = await loginToQnap(config.qnapServer, config.qnapPort, config.qnapUsername, config.qnapPassword);
+        sid = qtsLoginResult.sid;
+        console.log('QTS login result:', { ok: qtsLoginResult.ok, hasSid: Boolean(sid) });
+      }
     }
 
-    const responseText = await response.text();
-    console.log('QNAP response:', responseText);
-    
-    // Check if the response indicates success
-    if (responseText.includes('success') || responseText.includes('added') || response.status === 200) {
+    for (const endpoint of endpoints) {
+      try {
+        console.log(`Trying endpoint: ${endpoint}`);
+        
+        // Method 1: Form data approach
+        if (endpoint.includes('AddUrl')) {
+          // Match frontend: application/x-www-form-urlencoded with temp/move/url/sid
+          const bodyParams = new URLSearchParams();
+          bodyParams.set('temp', 'Download');
+          bodyParams.set('move', targetDir.path); // path should match QNAP share/folder
+          bodyParams.set('url', magnetUrl);
+          if (sid) {
+            bodyParams.set('sid', sid);
+            console.log('Including sid in request:', sid);
+          } else {
+            console.warn('No sid available for request - this may cause session error');
+          }
+
+          const requestOptions = {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+              'X-Requested-With': 'XMLHttpRequest',
+              'Origin': getQnapBaseUrl(config.qnapServer, config.qnapPort),
+              'Pragma': 'no-cache',
+              'Cache-Control': 'no-cache'
+            },
+            body: bodyParams.toString(),
+            credentials: 'include'
+          };
+
+          console.log('Sending request to:', endpoint);
+          console.log('Request body:', bodyParams.toString());
+          console.log('Has credentials:', config.qnapUsername && config.qnapPassword ? 'yes' : 'no');
+          console.log('Has sid:', sid ? 'yes' : 'no');
+
+          let response = await fetch(endpoint, requestOptions);
+          let parsed = await parseDownloadStationResponse(response);
+          
+          console.log('Response status:', response.status);
+          console.log('Response parsed:', parsed);
+
+          // If we got a session error (commonly error 5), try to login once and retry
+          if (!parsed.ok && parsed.error === 5 && config.qnapUsername && config.qnapPassword) {
+            console.log('Session error from Download Station, attempting Download Station login...');
+            const loginResult = await loginToDownloadStation(config.qnapServer, config.qnapPort, config.qnapUsername, config.qnapPassword);
+            didLogin = true;
+            sid = loginResult.sid || sid;
+            console.log('Download Station login result:', { ok: loginResult.ok, status: loginResult.status, hasSid: Boolean(sid) });
+            
+            // If Download Station login didn't give us a sid, try QTS login
+            if (!sid && loginResult.ok) {
+              console.log('No sid from Download Station login, trying QTS login...');
+              const qtsLoginResult = await loginToQnap(config.qnapServer, config.qnapPort, config.qnapUsername, config.qnapPassword);
+              sid = qtsLoginResult.sid || sid;
+              console.log('QTS login result:', { ok: qtsLoginResult.ok, hasSid: Boolean(sid) });
+            }
+            
+            // retry once after login
+            if (sid) {
+              bodyParams.set('sid', sid);
+            }
+            response = await fetch(endpoint, {
+              ...requestOptions,
+              body: bodyParams.toString()
+            });
+            parsed = await parseDownloadStationResponse(response);
+          }
+
+          if (parsed.ok) {
+            console.log(`Success with ${endpoint}:`, parsed.raw);
+            success = true;
+            break;
+          } else {
+            lastError = new Error(parsed.reason || `HTTP ${response.status}`);
+          }
+        }
+        
+        // Method 2: JSON approach
+        else if (endpoint.includes('Add')) {
+          const jsonData = {
+            url: magnetUrl,
+            destination: targetDir.path,
+            type: 'url'
+          };
+          
+          const requestOptions = {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(jsonData),
+            credentials: 'include'
+          };
+
+          if (config.qnapUsername && config.qnapPassword) {
+            const credentials = btoa(`${config.qnapUsername}:${config.qnapPassword}`);
+            requestOptions.headers['Authorization'] = `Basic ${credentials}`;
+          }
+
+          let response = await fetch(endpoint, requestOptions);
+          let parsed = await parseDownloadStationResponse(response);
+
+          if (!parsed.ok && parsed.error === 5 && config.qnapUsername && config.qnapPassword) {
+            console.log('Session error from Download Station (JSON), attempting Download Station login...');
+            const loginResult = await loginToDownloadStation(config.qnapServer, config.qnapPort, config.qnapUsername, config.qnapPassword);
+            didLogin = true;
+            sid = loginResult.sid;
+            console.log('Download Station login result:', { ok: loginResult.ok, status: loginResult.status, hasSid: Boolean(sid) });
+            
+            // If Download Station login didn't give us a sid, try QTS login
+            if (!sid && loginResult.ok) {
+              console.log('No sid from Download Station login, trying QTS login...');
+              const qtsLoginResult = await loginToQnap(config.qnapServer, config.qnapPort, config.qnapUsername, config.qnapPassword);
+              sid = qtsLoginResult.sid || sid;
+              console.log('QTS login result:', { ok: qtsLoginResult.ok, hasSid: Boolean(sid) });
+            }
+            
+            // Add sid to JSON request if we have one
+            if (sid) {
+              jsonData.sid = sid;
+              requestOptions.body = JSON.stringify(jsonData);
+            }
+            
+            response = await fetch(endpoint, requestOptions);
+            parsed = await parseDownloadStationResponse(response);
+          }
+
+          if (parsed.ok) {
+            console.log(`Success with ${endpoint}:`, parsed.raw);
+            success = true;
+            break;
+          } else {
+            lastError = new Error(parsed.reason || `HTTP ${response.status}`);
+          }
+        }
+        
+      } catch (error) {
+        console.log(`Failed with ${endpoint}:`, error.message);
+        lastError = error;
+        continue;
+      }
+    }
+
+    if (success) {
       console.log(`Magnet link successfully sent to QNAP directory: ${targetDir.name}`);
       return true;
     } else {
-      console.warn('Unexpected response from QNAP:', responseText);
-      return true; // Assume success if we get a response
+      throw new Error(`All endpoints failed. Last error: ${lastError?.message || 'Unknown error'}`);
     }
 
   } catch (error) {
@@ -462,6 +754,77 @@ function getContextMenuCount() {
       });
     });
   });
+}
+
+// Function to test QNAP API endpoints
+async function testQnapEndpoints() {
+  try {
+    const config = await chrome.storage.sync.get([
+      'qnapServer',
+      'qnapPort',
+      'qnapUsername',
+      'qnapPassword'
+    ]);
+
+    if (!config.qnapServer) {
+      throw new Error('QNAP server address not configured');
+    }
+
+    console.log('Testing QNAP API endpoints...');
+    
+    const baseUrl = `http://${config.qnapServer}:${config.qnapPort || '8080'}`;
+    const endpoints = [
+      '/downloadstation/V4/Task/Query',
+      '/downloadstation/V4/Task/AddUrl',
+      '/downloadstation/V4/Task/Add',
+      '/downloadstation/V3/Task/Query',
+      '/downloadstation/V3/Task/AddUrl'
+    ];
+
+    const results = {};
+    
+    for (const endpoint of endpoints) {
+      try {
+        const url = baseUrl + endpoint;
+        console.log(`Testing: ${url}`);
+        
+        const requestOptions = {
+          method: 'GET',
+          headers: {}
+        };
+
+        if (config.qnapUsername && config.qnapPassword) {
+          const credentials = btoa(`${config.qnapUsername}:${config.qnapPassword}`);
+          requestOptions.headers['Authorization'] = `Basic ${credentials}`;
+        }
+
+        const response = await fetch(url, requestOptions);
+        results[endpoint] = {
+          status: response.status,
+          statusText: response.statusText,
+          ok: response.ok
+        };
+        
+        if (response.ok) {
+          const responseText = await response.text();
+          results[endpoint].response = responseText.substring(0, 200) + '...';
+        }
+        
+      } catch (error) {
+        results[endpoint] = {
+          error: error.message,
+          ok: false
+        };
+      }
+    }
+    
+    console.log('QNAP API endpoint test results:', results);
+    return results;
+
+  } catch (error) {
+    console.error('Failed to test QNAP endpoints:', error);
+    throw error;
+  }
 }
 
 // Function to query current tasks (for debugging/monitoring)
@@ -557,6 +920,14 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         sendResponse({ success: true });
       });
       return true;
+    } else if (request.action === 'testQnapEndpoints') {
+      console.log('Testing QNAP endpoints...');
+      testQnapEndpoints().then(results => {
+        sendResponse({ success: true, results: results });
+      }).catch(error => {
+        sendResponse({ success: false, error: error.message });
+      });
+      return true;
     }
   } catch (error) {
     console.error('Error handling message:', error);
@@ -587,59 +958,64 @@ async function handleMagnetLink(magnetUrl, pageUrl) {
       throw new Error('QNAP server address not configured');
     }
 
-    // Use the new V4 API for legacy support too
-    const sessionId = generateSessionId();
-    const qnapUrl = `http://${config.qnapServer}:${config.qnapPort || '8080'}/downloadstation/V4/Task/AddUrl`;
+    console.log('Legacy handler: Sending magnet link to QNAP');
     
-    // Create form data for QNAP Download Station V4 API
-    const formData = new FormData();
-    formData.append('sid', sessionId);
-    formData.append('temp', 'Download');
-    formData.append('move', 'Download'); // Default to Downloads folder
-    formData.append('url', magnetUrl);
-    
-    // Prepare request options
-    const requestOptions = {
-      method: 'POST',
-      body: formData,
-      headers: {}
-    };
+    // Try to send to default Downloads folder
+    try {
+      // Use the same improved approach as sendToSpecificDirectory
+      const endpoints = [
+        `http://${config.qnapServer}:${config.qnapPort || '8080'}/downloadstation/V4/Task/AddUrl`,
+        `http://${config.qnapServer}:${config.qnapPort || '8080'}/downloadstation/V4/Task/Add`,
+        `http://${config.qnapServer}:${config.qnapPort || '8080'}/downloadstation/V3/Task/AddUrl`
+      ];
 
-    // Add authentication if provided
-    if (config.qnapUsername && config.qnapPassword) {
-      const credentials = btoa(`${config.qnapUsername}:${config.qnapPassword}`);
-      requestOptions.headers['Authorization'] = `Basic ${credentials}`;
+      let success = false;
+      for (const endpoint of endpoints) {
+        try {
+          console.log(`Legacy handler trying: ${endpoint}`);
+          
+          if (endpoint.includes('AddUrl')) {
+            const formData = new FormData();
+            formData.append('url', magnetUrl);
+            formData.append('destination', 'Download');
+            
+            const response = await fetch(endpoint, {
+              method: 'POST',
+              body: formData
+            });
+            
+            if (response.ok) {
+              console.log('Legacy handler: Success with', endpoint);
+              success = true;
+              break;
+            }
+          }
+        } catch (error) {
+          console.log(`Legacy handler failed with ${endpoint}:`, error.message);
+          continue;
+        }
+      }
+      
+      if (success) {
+        console.log('Magnet link successfully sent to QNAP via legacy handler');
+        return true;
+      }
+    } catch (error) {
+      console.log('Legacy handler failed, will fallback to clipboard');
     }
 
-    // Send request to QNAP
-    const response = await fetch(qnapUrl, requestOptions);
-    
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-    }
-
-    const responseText = await response.text();
-    
-    // Check if the response indicates success
-    if (responseText.includes('success') || responseText.includes('added') || response.status === 200) {
-      console.log('Magnet link successfully sent to QNAP');
-      return true;
-    } else {
-      console.warn('Unexpected response from QNAP:', responseText);
-      return true; // Assume success if we get a response
-    }
-
-  } catch (error) {
-    console.error('Failed to send magnet link to QNAP:', error);
-    
     // Fallback: copy to clipboard
     try {
       await navigator.clipboard.writeText(magnetUrl);
       console.log('Magnet link copied to clipboard as fallback');
+      return true;
     } catch (clipboardError) {
       console.error('Failed to copy to clipboard:', clipboardError);
+      throw error;
     }
-    
+
+  } catch (error) {
+    console.error('Failed to handle magnet link:', error);
     throw error;
   }
 }
