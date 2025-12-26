@@ -6,6 +6,14 @@ document.addEventListener('DOMContentLoaded', function() {
   const addDirectoryBtn = document.getElementById('addDirectory');
   const directoryList = document.getElementById('directoryList');
   
+  // Verify critical elements exist
+  if (!addDirectoryBtn) {
+    console.error('Add directory button not found in DOM!');
+  }
+  if (!directoryList) {
+    console.error('Directory list element not found in DOM!');
+  }
+  
   // Load saved configuration
   loadConfiguration();
   
@@ -51,9 +59,14 @@ document.addEventListener('DOMContentLoaded', function() {
   });
   
   // Handle add directory
-  addDirectoryBtn.addEventListener('click', function() {
-    addDirectory();
-  });
+  if (addDirectoryBtn) {
+    addDirectoryBtn.addEventListener('click', function() {
+      console.log('Add directory button clicked');
+      addDirectory();
+    });
+  } else {
+    console.error('Add directory button not found!');
+  }
   
   // Function to load configuration from storage
   function loadConfiguration() {
@@ -71,22 +84,37 @@ document.addEventListener('DOMContentLoaded', function() {
       document.getElementById('qnapPassword').value = items.qnapPassword || '';
       document.getElementById('autoSend').checked = items.autoSend !== false;
       
-      // Load directories
-      const directories = items.downloadDirectories || [
-        { name: 'Downloads', path: 'Download' },
-        { name: 'Movies', path: 'Movies' }
-      ];
+      // Load directories - if none exist, initialize with 4 defaults
+      let directories = items.downloadDirectories;
+      if (!directories || directories.length === 0) {
+        directories = [
+          { name: 'Downloads', path: 'Download' },
+          { name: 'Movies', path: 'Movies' },
+          { name: 'TV Shows', path: 'TV' },
+          { name: 'Music', path: 'Music' }
+        ];
+        // Save the default directories
+        chrome.storage.sync.set({ downloadDirectories: directories }, function() {
+          console.log('Initialized with default directories');
+        });
+      }
       renderDirectories(directories);
     });
   }
   
   // Function to render directories
   function renderDirectories(directories) {
+    if (!directoryList) {
+      console.error('directoryList element not found!');
+      return;
+    }
+    console.log('Rendering directories:', directories);
     directoryList.innerHTML = '';
     directories.forEach((dir, index) => {
       const dirItem = createDirectoryItem(dir, index);
       directoryList.appendChild(dirItem);
     });
+    console.log('Directories rendered. Count:', directories.length);
   }
   
   // Function to create directory item
@@ -112,9 +140,11 @@ document.addEventListener('DOMContentLoaded', function() {
     removeBtn.type = 'button';
     removeBtn.className = 'remove-dir-btn';
     removeBtn.textContent = '×';
-    removeBtn.onclick = function() {
-      removeDirectory(index);
-    };
+    removeBtn.dataset.index = index; // Store index in data attribute
+    removeBtn.addEventListener('click', function() {
+      const idx = parseInt(this.dataset.index);
+      removeDirectory(idx);
+    });
     
     dirItem.appendChild(nameInput);
     dirItem.appendChild(pathInput);
@@ -134,14 +164,36 @@ document.addEventListener('DOMContentLoaded', function() {
   
   // Function to add directory
   function addDirectory() {
-    chrome.storage.sync.get(['downloadDirectories'], function(items) {
-      const directories = items.downloadDirectories || [];
-      directories.push({ name: '', path: '' });
-      
-      chrome.storage.sync.set({ downloadDirectories: directories }, function() {
-        renderDirectories(directories);
+    console.log('Adding new directory...');
+    try {
+      chrome.storage.sync.get(['downloadDirectories'], function(items) {
+        try {
+          const directories = items.downloadDirectories || [];
+          console.log('Current directories before add:', directories);
+          
+          // Add new empty directory
+          directories.push({ name: '', path: '' });
+          console.log('New directories array:', directories);
+          
+          chrome.storage.sync.set({ downloadDirectories: directories }, function() {
+            if (chrome.runtime.lastError) {
+              console.error('Error saving directories:', chrome.runtime.lastError);
+              showStatus('Failed to add directory. Please try again.', 'error');
+            } else {
+              console.log('Directories saved successfully, rendering...');
+              renderDirectories(directories);
+              showStatus('Directory added. Fill in the name and folder path.', 'success');
+            }
+          });
+        } catch (error) {
+          console.error('Error in addDirectory callback:', error);
+          showStatus('Error adding directory: ' + error.message, 'error');
+        }
       });
-    });
+    } catch (error) {
+      console.error('Error in addDirectory:', error);
+      showStatus('Error adding directory: ' + error.message, 'error');
+    }
   }
   
   // Function to remove directory

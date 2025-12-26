@@ -59,7 +59,9 @@ chrome.runtime.onInstalled.addListener(() => {
     autoSend: true,
     downloadDirectories: [
       { name: 'Downloads', path: 'Download' },
-      { name: 'Movies', path: 'Movies' }
+      { name: 'Movies', path: 'Movies' },
+      { name: 'TV Shows', path: 'TV' },
+      { name: 'Music', path: 'Music' }
     ]
   }, () => {
     console.log('Default configuration set, creating context menus...');
