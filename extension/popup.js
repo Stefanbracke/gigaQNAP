@@ -58,12 +58,29 @@ document.addEventListener('DOMContentLoaded', function() {
     clearAndRecreateMenus();
   });
   
-  // Handle add directory
+  // Handle add directory - use both addEventListener and global handler
+  // Make function globally accessible as fallback
+  window.addDirectoryHandler = function() {
+    console.log('Add directory button clicked (global handler)');
+    addDirectory();
+  };
+  
   if (addDirectoryBtn) {
-    addDirectoryBtn.addEventListener('click', function() {
-      console.log('Add directory button clicked');
+    console.log('Add directory button found, setting up event listener');
+    addDirectoryBtn.addEventListener('click', function(e) {
+      console.log('Add directory button clicked (event listener)');
+      e.preventDefault();
+      e.stopPropagation();
       addDirectory();
     });
+    
+    // Also try direct onclick as backup
+    addDirectoryBtn.onclick = function(e) {
+      console.log('Add directory button clicked (onclick handler)');
+      e.preventDefault();
+      e.stopPropagation();
+      addDirectory();
+    };
   } else {
     console.error('Add directory button not found!');
   }
@@ -162,27 +179,37 @@ document.addEventListener('DOMContentLoaded', function() {
     return dirItem;
   }
   
-  // Function to add directory
+  // Function to add directory - make it globally accessible
   function addDirectory() {
-    console.log('Adding new directory...');
+    console.log('=== addDirectory function called ===');
+    console.trace('Call stack:');
+    
     try {
       chrome.storage.sync.get(['downloadDirectories'], function(items) {
+        if (chrome.runtime.lastError) {
+          console.error('Error getting directories:', chrome.runtime.lastError);
+          showStatus('Error reading directories: ' + chrome.runtime.lastError.message, 'error');
+          return;
+        }
+        
         try {
           const directories = items.downloadDirectories || [];
           console.log('Current directories before add:', directories);
+          console.log('Current count:', directories.length);
           
           // Add new empty directory
           directories.push({ name: '', path: '' });
           console.log('New directories array:', directories);
+          console.log('New count:', directories.length);
           
           chrome.storage.sync.set({ downloadDirectories: directories }, function() {
             if (chrome.runtime.lastError) {
               console.error('Error saving directories:', chrome.runtime.lastError);
-              showStatus('Failed to add directory. Please try again.', 'error');
+              showStatus('Failed to add directory: ' + chrome.runtime.lastError.message, 'error');
             } else {
-              console.log('Directories saved successfully, rendering...');
+              console.log('✓ Directories saved successfully, rendering...');
               renderDirectories(directories);
-              showStatus('Directory added. Fill in the name and folder path.', 'success');
+              showStatus('Directory added successfully! Fill in the name and folder path.', 'success');
             }
           });
         } catch (error) {
@@ -195,6 +222,9 @@ document.addEventListener('DOMContentLoaded', function() {
       showStatus('Error adding directory: ' + error.message, 'error');
     }
   }
+  
+  // Make function globally accessible
+  window.addDirectory = addDirectory;
   
   // Function to remove directory
   function removeDirectory(index) {
